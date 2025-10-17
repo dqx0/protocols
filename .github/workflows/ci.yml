@@ -21,8 +21,8 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          # Use latest stable to avoid invalid go directive issues
-          go-version: stable
+          # Use the module's Go version to match tooling
+          go-version-file: go.mod
           cache: true
 
       - name: Go version
@@ -35,6 +35,7 @@ jobs:
         uses: golangci/golangci-lint-action@v6
         with:
           version: latest
+          install-mode: go
           args: --timeout=5m
 
       - name: Vet
