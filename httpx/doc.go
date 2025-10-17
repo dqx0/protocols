@@ -14,21 +14,20 @@
 //
 // Quick start (server):
 //
-//  s := &httpx.Server{Addr: ":8080"}
-//  s.Handler = httpx.HandlerFunc(func(w httpx.ResponseWriter, r *httpx.Request) {
-//      w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-//      w.WriteHeader(200)
-//      w.Write([]byte("hello"))
-//  })
-//  if err := s.ListenAndServe(); err != nil { log.Fatal(err) }
+//	s := &httpx.Server{Addr: ":8080"}
+//	s.Handler = httpx.HandlerFunc(func(w httpx.ResponseWriter, r *httpx.Request) {
+//	    w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+//	    w.WriteHeader(200)
+//	    w.Write([]byte("hello"))
+//	})
+//	if err := s.ListenAndServe(); err != nil { log.Fatal(err) }
 //
 // Quick start (client):
 //
-//  c := &httpx.Client{}
-//  res, err := c.Get("http://127.0.0.1:8080/")
-//  if err != nil { log.Fatal(err) }
-//  defer res.Body.Close()
-//  b, _ := io.ReadAll(res.Body)
-//  fmt.Println(res.StatusCode, string(b))
+//	c := &httpx.Client{}
+//	res, err := c.Get("http://127.0.0.1:8080/")
+//	if err != nil { log.Fatal(err) }
+//	defer res.Body.Close()
+//	b, _ := io.ReadAll(res.Body)
+//	fmt.Println(res.StatusCode, string(b))
 package httpx
-

@@ -1,292 +1,294 @@
 package http1
 
 import (
-    "bufio"
-    "errors"
-    "io"
-    "strconv"
-    "strings"
+	"bufio"
+	"errors"
+	"io"
+	"strconv"
+	"strings"
 )
 
 // ParsedRequest is a minimal representation parsed from the wire.
 type ParsedRequest struct {
-    Method        string
-    RequestURI    string
-    Proto         string
-    Header        map[string][]string
-    ContentLength int64
-    Body          io.ReadCloser
+	Method        string
+	RequestURI    string
+	Proto         string
+	Header        map[string][]string
+	ContentLength int64
+	Body          io.ReadCloser
 }
 
 type Reader struct {
-    BR             *bufio.Reader
-    MaxHeaderBytes int
-    MaxTotalHeaderBytes int
+	BR                  *bufio.Reader
+	MaxHeaderBytes      int
+	MaxTotalHeaderBytes int
 }
 
 func (r *Reader) ReadRequest() (*ParsedRequest, error) {
-    line, err := r.readLine()
-    if err != nil {
-        return nil, err
-    }
-    parts := strings.SplitN(line, " ", 3)
-    if len(parts) != 3 {
-        return nil, io.ErrUnexpectedEOF
-    }
-    method, uri, proto := parts[0], parts[1], parts[2]
-    if !strings.HasPrefix(proto, "HTTP/1.") {
-        return nil, io.ErrUnexpectedEOF
-    }
-    hdr, err := r.readHeaders()
-    if err != nil {
-        return nil, err
-    }
-    // Decide body source with CL/TE validation
-    teChunked, tePresent, teErr := parseTransferEncoding(hdr)
-    if teErr != nil {
-        return nil, teErr
-    }
-    cl, clPresent, clErr := parseContentLength(hdr)
-    if clErr != nil {
-        return nil, clErr
-    }
-    if tePresent && clPresent {
-        return nil, errors.New("http1: both Transfer-Encoding and Content-Length present")
-    }
-    var body io.ReadCloser
-    if teChunked {
-        body = newChunkedBody(r.BR, r.MaxHeaderBytes)
-        cl = -1
-    } else if clPresent {
-        if cl > 0 {
-            lr := &io.LimitedReader{R: r.BR, N: cl}
-            body = &limitedBody{lr: lr}
-        } else {
-            body = io.NopCloser(strings.NewReader(""))
-        }
-    } else {
-        body = io.NopCloser(strings.NewReader(""))
-    }
-    return &ParsedRequest{
-        Method:        method,
-        RequestURI:    uri,
-        Proto:         proto,
-        Header:        hdr,
-        ContentLength: cl,
-        Body:          body,
-    }, nil
+	line, err := r.readLine()
+	if err != nil {
+		return nil, err
+	}
+	parts := strings.SplitN(line, " ", 3)
+	if len(parts) != 3 {
+		return nil, io.ErrUnexpectedEOF
+	}
+	method, uri, proto := parts[0], parts[1], parts[2]
+	if !strings.HasPrefix(proto, "HTTP/1.") {
+		return nil, io.ErrUnexpectedEOF
+	}
+	hdr, err := r.readHeaders()
+	if err != nil {
+		return nil, err
+	}
+	// Decide body source with CL/TE validation
+	teChunked, tePresent, teErr := parseTransferEncoding(hdr)
+	if teErr != nil {
+		return nil, teErr
+	}
+	cl, clPresent, clErr := parseContentLength(hdr)
+	if clErr != nil {
+		return nil, clErr
+	}
+	if tePresent && clPresent {
+		return nil, errors.New("http1: both Transfer-Encoding and Content-Length present")
+	}
+	var body io.ReadCloser
+	if teChunked {
+		body = newChunkedBody(r.BR, r.MaxHeaderBytes)
+		cl = -1
+	} else if clPresent {
+		if cl > 0 {
+			lr := &io.LimitedReader{R: r.BR, N: cl}
+			body = &limitedBody{lr: lr}
+		} else {
+			body = io.NopCloser(strings.NewReader(""))
+		}
+	} else {
+		body = io.NopCloser(strings.NewReader(""))
+	}
+	return &ParsedRequest{
+		Method:        method,
+		RequestURI:    uri,
+		Proto:         proto,
+		Header:        hdr,
+		ContentLength: cl,
+		Body:          body,
+	}, nil
 }
 
 func (r *Reader) readHeaders() (map[string][]string, error) {
-    h := make(map[string][]string)
-    var total int
-    for {
-        line, err := r.readLine()
-        if err != nil {
-            return nil, err
-        }
-        if line == "" {
-            break
-        }
-        total += len(line) + 2 // include CRLF
-        if r.MaxTotalHeaderBytes > 0 && total > r.MaxTotalHeaderBytes {
-            return nil, io.ErrShortBuffer
-        }
-        i := strings.IndexByte(line, ':')
-        if i <= 0 {
-            return nil, io.ErrUnexpectedEOF
-        }
-        k := strings.TrimSpace(line[:i])
-        v := strings.TrimSpace(line[i+1:])
-        if !validToken(k) {
-            return nil, errors.New("http1: invalid header name")
-        }
-        if hasInvalidValueByte(v) {
-            return nil, errors.New("http1: invalid header value")
-        }
-        addHeader(h, k, v)
-    }
-    return h, nil
+	h := make(map[string][]string)
+	var total int
+	for {
+		line, err := r.readLine()
+		if err != nil {
+			return nil, err
+		}
+		if line == "" {
+			break
+		}
+		total += len(line) + 2 // include CRLF
+		if r.MaxTotalHeaderBytes > 0 && total > r.MaxTotalHeaderBytes {
+			return nil, io.ErrShortBuffer
+		}
+		i := strings.IndexByte(line, ':')
+		if i <= 0 {
+			return nil, io.ErrUnexpectedEOF
+		}
+		k := strings.TrimSpace(line[:i])
+		v := strings.TrimSpace(line[i+1:])
+		if !validToken(k) {
+			return nil, errors.New("http1: invalid header name")
+		}
+		if hasInvalidValueByte(v) {
+			return nil, errors.New("http1: invalid header value")
+		}
+		addHeader(h, k, v)
+	}
+	return h, nil
 }
 
 func (r *Reader) readLine() (string, error) {
-    var sb strings.Builder
-    for {
-        b, err := r.BR.ReadByte()
-        if err != nil {
-            return "", err
-        }
-        if b == '\n' {
-            break
-        }
-        if b != '\r' {
-            sb.WriteByte(b)
-        }
-        if r.MaxHeaderBytes > 0 && sb.Len() > r.MaxHeaderBytes {
-            return "", io.ErrShortBuffer
-        }
-    }
-    return sb.String(), nil
+	var sb strings.Builder
+	for {
+		b, err := r.BR.ReadByte()
+		if err != nil {
+			return "", err
+		}
+		if b == '\n' {
+			break
+		}
+		if b != '\r' {
+			sb.WriteByte(b)
+		}
+		if r.MaxHeaderBytes > 0 && sb.Len() > r.MaxHeaderBytes {
+			return "", io.ErrShortBuffer
+		}
+	}
+	return sb.String(), nil
 }
 
 type limitedBody struct {
-    lr *io.LimitedReader
+	lr *io.LimitedReader
 }
 
 func (b *limitedBody) Read(p []byte) (int, error) { return b.lr.Read(p) }
 
 func (b *limitedBody) Close() error {
-    // Drain remaining bytes to allow next request on the same connection.
-    buf := make([]byte, 1024)
-    for b.lr.N > 0 {
-        n := int64(len(buf))
-        if n > b.lr.N {
-            n = b.lr.N
-        }
-        if n <= 0 {
-            break
-        }
-        if _, err := io.ReadFull(b.lr, buf[:n]); err != nil {
-            if err == io.ErrUnexpectedEOF || err == io.EOF {
-                break
-            }
-            return err
-        }
-    }
-    return nil
+	// Drain remaining bytes to allow next request on the same connection.
+	buf := make([]byte, 1024)
+	for b.lr.N > 0 {
+		n := int64(len(buf))
+		if n > b.lr.N {
+			n = b.lr.N
+		}
+		if n <= 0 {
+			break
+		}
+		if _, err := io.ReadFull(b.lr, buf[:n]); err != nil {
+			if err == io.ErrUnexpectedEOF || err == io.EOF {
+				break
+			}
+			return err
+		}
+	}
+	return nil
 }
 
 func addHeader(h map[string][]string, k, v string) {
-    hk := canonicalHeaderKey(k)
-    h[hk] = append(h[hk], v)
+	hk := canonicalHeaderKey(k)
+	h[hk] = append(h[hk], v)
 }
 
 func getHeader(h map[string][]string, k string) string {
-    hk := canonicalHeaderKey(k)
-    if vv, ok := h[hk]; ok && len(vv) > 0 {
-        return vv[0]
-    }
-    return ""
+	hk := canonicalHeaderKey(k)
+	if vv, ok := h[hk]; ok && len(vv) > 0 {
+		return vv[0]
+	}
+	return ""
 }
 
 func hasChunkedTE(h map[string][]string) bool {
-    hk := canonicalHeaderKey("Transfer-Encoding")
-    if vv, ok := h[hk]; ok {
-        for _, v := range vv {
-            if strings.Contains(strings.ToLower(v), "chunked") {
-                return true
-            }
-        }
-    }
-    return false
+	hk := canonicalHeaderKey("Transfer-Encoding")
+	if vv, ok := h[hk]; ok {
+		for _, v := range vv {
+			if strings.Contains(strings.ToLower(v), "chunked") {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // parseContentLength validates Content-Length. Multiple occurrences must agree.
 func parseContentLength(h map[string][]string) (int64, bool, error) {
-    hk := canonicalHeaderKey("Content-Length")
-    vv, ok := h[hk]
-    if !ok || len(vv) == 0 {
-        return 0, false, nil
-    }
-    var have bool
-    var val int64
-    for _, raw := range vv {
-        parts := strings.Split(raw, ",")
-        for _, p := range parts {
-            p = strings.TrimSpace(p)
-            if p == "" {
-                return 0, true, errors.New("http1: empty Content-Length value")
-            }
-            n, err := strconv.ParseInt(p, 10, 64)
-            if err != nil || n < 0 {
-                return 0, true, errors.New("http1: invalid Content-Length")
-            }
-            if !have {
-                val = n
-                have = true
-            } else if val != n {
-                return 0, true, errors.New("http1: mismatched Content-Length values")
-            }
-        }
-    }
-    return val, true, nil
+	hk := canonicalHeaderKey("Content-Length")
+	vv, ok := h[hk]
+	if !ok || len(vv) == 0 {
+		return 0, false, nil
+	}
+	var have bool
+	var val int64
+	for _, raw := range vv {
+		parts := strings.Split(raw, ",")
+		for _, p := range parts {
+			p = strings.TrimSpace(p)
+			if p == "" {
+				return 0, true, errors.New("http1: empty Content-Length value")
+			}
+			n, err := strconv.ParseInt(p, 10, 64)
+			if err != nil || n < 0 {
+				return 0, true, errors.New("http1: invalid Content-Length")
+			}
+			if !have {
+				val = n
+				have = true
+			} else if val != n {
+				return 0, true, errors.New("http1: mismatched Content-Length values")
+			}
+		}
+	}
+	return val, true, nil
 }
 
 // parseTransferEncoding validates TE for requests. Only "chunked" allowed.
 func parseTransferEncoding(h map[string][]string) (bool, bool, error) {
-    hk := canonicalHeaderKey("Transfer-Encoding")
-    vv, ok := h[hk]
-    if !ok || len(vv) == 0 {
-        return false, false, nil
-    }
-    var chunked bool
-    for _, raw := range vv {
-        items := strings.Split(raw, ",")
-        for i, it := range items {
-            v := strings.TrimSpace(strings.ToLower(it))
-            if v == "" {
-                return false, true, errors.New("http1: invalid Transfer-Encoding value")
-            }
-            if idx := strings.IndexByte(v, ';'); idx >= 0 {
-                v = strings.TrimSpace(v[:idx])
-            }
-            if v == "chunked" {
-                chunked = true
-                if i != len(items)-1 {
-                    return false, true, errors.New("http1: chunked not last in Transfer-Encoding")
-                }
-                continue
-            }
-            // any other coding is not allowed on requests (RFC 9112)
-            return false, true, errors.New("http1: unsupported Transfer-Encoding")
-        }
-    }
-    return chunked, true, nil
+	hk := canonicalHeaderKey("Transfer-Encoding")
+	vv, ok := h[hk]
+	if !ok || len(vv) == 0 {
+		return false, false, nil
+	}
+	var chunked bool
+	for _, raw := range vv {
+		items := strings.Split(raw, ",")
+		for i, it := range items {
+			v := strings.TrimSpace(strings.ToLower(it))
+			if v == "" {
+				return false, true, errors.New("http1: invalid Transfer-Encoding value")
+			}
+			if idx := strings.IndexByte(v, ';'); idx >= 0 {
+				v = strings.TrimSpace(v[:idx])
+			}
+			if v == "chunked" {
+				chunked = true
+				if i != len(items)-1 {
+					return false, true, errors.New("http1: chunked not last in Transfer-Encoding")
+				}
+				continue
+			}
+			// any other coding is not allowed on requests (RFC 9112)
+			return false, true, errors.New("http1: unsupported Transfer-Encoding")
+		}
+	}
+	return chunked, true, nil
 }
 
 // Very small canonicalizer to avoid importing textproto here.
 func canonicalHeaderKey(s string) string {
-    b := []byte(strings.ToLower(s))
-    upper := true
-    for i, c := range b {
-        if c >= 'a' && c <= 'z' {
-            if upper {
-                b[i] = byte(c - 'a' + 'A')
-            }
-            upper = false
-            continue
-        }
-        upper = c == '-'
-    }
-    return string(b)
+	b := []byte(strings.ToLower(s))
+	upper := true
+	for i, c := range b {
+		if c >= 'a' && c <= 'z' {
+			if upper {
+				b[i] = byte(c - 'a' + 'A')
+			}
+			upper = false
+			continue
+		}
+		upper = c == '-'
+	}
+	return string(b)
 }
 
 func validToken(s string) bool {
-    if s == "" { return false }
-    for i := 0; i < len(s); i++ {
-        c := s[i]
-        if (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') {
-            continue
-        }
-        switch c {
-        case '!', '#', '$', '%', '&', '\'', '*', '+', '-', '.', '^', '_', '`', '|', '~':
-            continue
-        default:
-            return false
-        }
-    }
-    return true
+	if s == "" {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') {
+			continue
+		}
+		switch c {
+		case '!', '#', '$', '%', '&', '\'', '*', '+', '-', '.', '^', '_', '`', '|', '~':
+			continue
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 func hasInvalidValueByte(v string) bool {
-    for i := 0; i < len(v); i++ {
-        b := v[i]
-        if b == '\r' || b == '\n' || b == 0x7f { // CR, LF, DEL not allowed
-            return true
-        }
-        if b < 0x20 && b != '\t' { // other controls, except HTAB
-            return true
-        }
-    }
-    return false
+	for i := 0; i < len(v); i++ {
+		b := v[i]
+		if b == '\r' || b == '\n' || b == 0x7f { // CR, LF, DEL not allowed
+			return true
+		}
+		if b < 0x20 && b != '\t' { // other controls, except HTAB
+			return true
+		}
+	}
+	return false
 }

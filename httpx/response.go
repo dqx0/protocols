@@ -6,10 +6,10 @@ import "io"
 //
 // Body must be closed by the caller when done reading.
 type Response struct {
-    Status        string
-    StatusCode    int
-    Proto         string
-    Header        Header
-    Body          io.ReadCloser
-    ContentLength int64
+	Status        string
+	StatusCode    int
+	Proto         string
+	Header        Header
+	Body          io.ReadCloser
+	ContentLength int64
 }

@@ -863,11 +863,11 @@ func (t *BasicTransport) CloseIdleConnections() {
 // Close stops background cleanup and closes idle connections. Active
 // connections are not forcibly closed.
 func (t *BasicTransport) Close() {
-    if t.stop != nil {
-        close(t.stop)
-        t.stop = nil
-    }
-    t.CloseIdleConnections()
+	if t.stop != nil {
+		close(t.stop)
+		t.stop = nil
+	}
+	t.CloseIdleConnections()
 }
 
 // ProxyFromEnvironment resolves a proxy URL from environment variables
