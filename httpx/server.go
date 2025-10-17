@@ -176,6 +176,15 @@ func (w *connResponseWriter) Write(p []byte) (int, error) {
     return w.bw.Write(p)
 }
 
+func (w *connResponseWriter) Flush() error {
+    if !w.wroteHdr {
+        if err := w.startIfNeeded(); err != nil {
+            return err
+        }
+    }
+    return w.bw.Flush()
+}
+
 func (s *Server) serveConn(c net.Conn) {
     defer c.Close()
     br := bufio.NewReader(c)
