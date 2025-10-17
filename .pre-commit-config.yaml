@@ -1,0 +1,18 @@
+repos:
+  # golangci-lint mirror maintained for pre-commit
+  - repo: https://github.com/pre-commit/mirrors-golangci-lint
+    rev: v1.64.8
+    hooks:
+      - id: golangci-lint
+        args: ["--timeout=5m"]
+
+  # Use local hook for gofumpt (requires gofumpt installed on PATH)
+  - repo: local
+    hooks:
+      - id: gofumpt
+        name: gofumpt
+        entry: gofumpt
+        language: system
+        types: [go]
+        args: ["-l", "-w"]
+
