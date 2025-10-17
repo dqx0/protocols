@@ -31,6 +31,12 @@ jobs:
       - name: Download deps
         run: go mod download
 
+      - name: Lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: v1.60.x
+          args: --timeout=5m
+
       - name: Vet
         run: go vet ./...
 
