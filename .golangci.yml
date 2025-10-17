@@ -1,0 +1,33 @@
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  disable-all: true
+  enable:
+    - govet
+    - staticcheck
+    - gosimple
+    - errcheck
+    - ineffassign
+    - typecheck
+    - gofumpt
+    - goimports
+    - misspell
+
+linters-settings:
+  gofumpt:
+    extra-rules: true
+  goimports:
+    # Group local imports under this module path
+    local-prefixes: dqx0.com/go/protcols
+
+issues:
+  max-same-issues: 0
+  exclude-dirs:
+    - dist
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - errcheck
+
