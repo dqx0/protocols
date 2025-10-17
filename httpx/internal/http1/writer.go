@@ -3,6 +3,7 @@ package http1
 import (
     "bufio"
     "fmt"
+    "strings"
 )
 
 // WriteResponse writes a minimal HTTP/1.1 response.
@@ -16,7 +17,7 @@ func WriteResponse(bw *bufio.Writer, status int, reason string, hdr map[string][
     }
     for k, vv := range hdr {
         for _, v := range vv {
-            if _, err := fmt.Fprintf(bw, "%s: %s\r\n", k, v); err != nil {
+            if _, err := fmt.Fprintf(bw, "%s: %s\r\n", k, sanitizeHeaderValue(v)); err != nil {
                 return err
             }
         }
@@ -96,7 +97,7 @@ func StartResponse(bw *bufio.Writer, status int, reason string, hdr map[string][
             continue
         }
         for _, v := range vv {
-            if _, err := fmt.Fprintf(bw, "%s: %s\r\n", k, v); err != nil {
+            if _, err := fmt.Fprintf(bw, "%s: %s\r\n", k, sanitizeHeaderValue(v)); err != nil {
                 return err
             }
         }
@@ -139,4 +140,22 @@ func EndChunked(bw *bufio.Writer) error {
         return err
     }
     return nil
+}
+
+func sanitizeHeaderValue(v string) string {
+    if v == "" { return v }
+    // Remove CR/LF and other control chars except HTAB
+    var b strings.Builder
+    b.Grow(len(v))
+    for i := 0; i < len(v); i++ {
+        c := v[i]
+        if c == '\r' || c == '\n' || c == 0x7f {
+            continue
+        }
+        if c < 0x20 && c != '\t' {
+            continue
+        }
+        b.WriteByte(c)
+    }
+    return b.String()
 }
